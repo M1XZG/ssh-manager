@@ -1,0 +1,22 @@
+/* Compact styling for modal and detail */
+
+#new-form {
+  width: 60%;
+  padding: 1 2;
+  border: heavy $secondary;
+  background: $panel;
+}
+
+#new-title { text-style: bold; }
+#new-help { color: $text-muted; }
+
+.row { padding: 0 0; }
+.row > Static { width: 14; }
+
+Input { height: 1; }
+Button { margin-right: 2; }
+
+#host-summary { padding: 0 1; }
+#edit-form { padding: 0 1; }
+
+#new-status { color: $warning; }

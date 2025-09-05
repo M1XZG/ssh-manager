@@ -271,22 +271,29 @@ class NewHostModal(ModalScreen[None]):  # pragma: no cover - interactive UI
         self.status: Static | None = None
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
-        box = Vertical(
-            Static("New Host Configuration", id="new-title"),
-            Horizontal(Static("Host:"), Input(id="new-host", placeholder="alias (required)"), classes="row"),
-            Horizontal(Static("HostName:"), Input(id="new-hostname", placeholder="hostname (optional)"), classes="row"),
-            Horizontal(Static("User:"), Input(id="new-user", placeholder="user", value="root"), classes="row"),
-            Horizontal(Static("Port:"), Input(id="new-port", placeholder="port", value="22"), classes="row"),
-            Horizontal(Static("KeyType:"), Input(id="new-keytype", placeholder="ed25519|rsa", value="ed25519"), classes="row"),
-            Horizontal(
-                Button("Create", id="create"),
-                Button("Cancel", id="cancel-new"),
-                classes="row"
-            ),
-            Static("", id="new-status"),
-            id="new-form"
-        )
-        yield box
+        yield Static("New Host Configuration (Press Enter to create, Esc to cancel)", id="new-title")
+        yield Static("Host (alias, required):")
+        yield Input(id="new-host", placeholder="e.g. web1")
+        yield Static("HostName (optional, defaults to Host):")
+        yield Input(id="new-hostname", placeholder="e.g. web1.internal")
+        yield Static("User (default root):")
+        yield Input(id="new-user", value="root")
+        yield Static("Port (default 22):")
+        yield Input(id="new-port", value="22")
+        yield Static("KeyType (ed25519 or rsa):")
+        yield Input(id="new-keytype", value="ed25519")
+        yield Horizontal(Button("Create", id="create"), Button("Cancel", id="cancel-new"))
+        yield Static("", id="new-status")
+
+    def on_mount(self) -> None:  # pragma: no cover - simple focus setup
+        # Focus first input so user can type immediately
+        self.set_focus(self.query_one('#new-host', Input))
+
+    def on_key(self, event: events.Key) -> None:  # pragma: no cover - user interaction
+        if event.key == 'enter':
+            self._create_host()
+        elif event.key == 'escape':
+            self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
