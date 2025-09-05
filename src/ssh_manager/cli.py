@@ -49,6 +49,19 @@ def parse(input_path: Path, backup: bool) -> None:
         h.host = safe  # ensure alias line matches the sanitized filename stem
         if not h.hostname:
             h.hostname = safe
+
+        # Skip default/wildcard blocks indicated by HostName * (treated as part of global defaults)
+        if h.hostname == '*':
+            click.echo(f"Skipping wildcard/default block with HostName * (not writing separate file)")
+            continue
+
+        # Relocate identity file (private key) into keys dir if present
+        if h.identity_file:
+            try:
+                relocate_identity_file(h, safe)
+            except Exception as exc:  # pragma: no cover - defensive logging without failing whole parse
+                click.echo(f"Warning: could not relocate key for {safe}: {exc}", err=True)
+
         store.write_host_config(CONFIG_D_DIR, h)
     regenerate_main_config()
     click.echo(f"Parsed {len(hosts)} host blocks -> {CONFIG_D_DIR}")
@@ -195,3 +208,54 @@ def tui() -> None:  # pragma: no cover - UI launcher
 
 
 # End of file
+
+
+def relocate_identity_file(host_cfg: HostConfig, safe_alias: str) -> None:
+    """Move the referenced identity file (and its .pub) into KEYS_DIR.
+
+    Naming strategy:
+      - If original basename already starts with the sanitized alias, keep it.
+      - Else prefix with '<alias>_'. E.g., alias 'web1' + 'id_ed25519' -> 'web1_id_ed25519'.
+      - Preserve original basename when already under KEYS_DIR (no move needed).
+    Updates host_cfg.identity_file with the absolute path to the relocated key.
+    """
+    original_str = host_cfg.identity_file
+    if not original_str:
+        return
+    orig_path = Path(original_str).expanduser()
+    if not orig_path.exists():  # nothing to move
+        return
+    # If already in KEYS_DIR, just normalize to absolute path and return
+    if KEYS_DIR in orig_path.parents or orig_path.parent == KEYS_DIR:
+        host_cfg.identity_file = str(orig_path)
+        return
+
+    KEYS_DIR.mkdir(parents=True, exist_ok=True)
+    base = orig_path.name
+    if base.startswith(safe_alias):
+        new_name = base
+    else:
+        new_name = f"{safe_alias}_{base}"
+    dest = KEYS_DIR / new_name
+    if not dest.exists():  # avoid overwriting; if exists we reuse
+        orig_path.replace(dest)
+    # Move .pub if exists
+    pub_src = orig_path.with_suffix(orig_path.suffix + '.pub') if orig_path.suffix else Path(str(orig_path) + '.pub')
+    if pub_src.exists():
+        pub_dest = dest.with_suffix(dest.suffix + '.pub') if dest.suffix else Path(str(dest) + '.pub')
+        if not pub_dest.exists():
+            try:
+                pub_src.replace(pub_dest)
+            except Exception:
+                pass
+        # set permissions
+        try:
+            pub_dest.chmod(0o644)
+        except Exception:
+            pass
+    # Set private key perms
+    try:
+        dest.chmod(0o600)
+    except Exception:
+        pass
+    host_cfg.identity_file = str(dest)
