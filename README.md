@@ -67,17 +67,21 @@ Host *
 ## Development
 Install deps:
 ```
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip3 install -e '.[dev]'
 ```
 Run CLI help:
 ```
 ssh-manager --help
 ```
+Optional (module form):
+```
+python3 -m ssh_manager --help
+```
 Run test suite:
 ```
-pytest -q
+python3 -m pytest -q
 ```
 
 ## License
