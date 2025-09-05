@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssh-manager"
+version = "0.1.0"
+description = "TUI and CLI tool to organize and manage ~/.ssh configuration and keys"
+readme = "README.md"
+authors = [ { name = "Your Name", email = "you@example.com" } ]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+  "textual>=0.58.0",
+  "rich>=13.7.0",
+  "click>=8.1.7",
+  "pyyaml>=6.0.1",
+  "paramiko>=3.4.0"
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "mypy"]
+
+[project.scripts]
+ssh-manager = "ssh_manager.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
