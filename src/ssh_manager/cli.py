@@ -42,29 +42,68 @@ def parse(input_path: Path, backup: bool) -> None:
         click.echo(f"Backup created at {snapshot}")
 
     text = input_path.read_text(encoding="utf-8") if input_path.exists() else ""
-    hosts = parser.parse_ssh_config(text)
-    for h in hosts:
+    original_hosts = parser.parse_ssh_config(text)
+    processed: list[HostConfig] = []
+    for h in original_hosts:
         base_raw = (h.hostname or h.host)
         safe = sanitize_filename(base_raw)
-        h.host = safe  # ensure alias line matches the sanitized filename stem
+        h.host = safe
         if not h.hostname:
             h.hostname = safe
-
-        # Skip default/wildcard blocks indicated by HostName * (treated as part of global defaults)
         if h.hostname == '*':
-            click.echo(f"Skipping wildcard/default block with HostName * (not writing separate file)")
+            click.echo("Skipping wildcard/default block with HostName * (not writing separate file)")
             continue
+        processed.append(h)
 
-        # Relocate identity file (private key) into keys dir if present
+    # Handle identity files: group by original expanded path
+    identity_groups: dict[Path, list[HostConfig]] = {}
+    for h in processed:
         if h.identity_file:
-            try:
-                relocate_identity_file(h, safe)
-            except Exception as exc:  # pragma: no cover - defensive logging without failing whole parse
-                click.echo(f"Warning: could not relocate key for {safe}: {exc}", err=True)
+            p = Path(h.identity_file).expanduser()
+            if p.exists():
+                identity_groups.setdefault(p, []).append(h)
 
+    KEYS_DIR.mkdir(parents=True, exist_ok=True)
+    for orig_path, group in identity_groups.items():
+        if len(group) == 1:
+            # Move (rename) single ownership key
+            host_cfg = group[0]
+            try:
+                relocate_identity_file(host_cfg, host_cfg.host)
+            except Exception as exc:  # pragma: no cover
+                click.echo(f"Warning: relocate failed for {host_cfg.host}: {exc}", err=True)
+        else:
+            # Duplicate the key for each host (copy) keeping original in place
+            base = orig_path.name
+            pub_src = _derive_pub_path(orig_path)
+            for host_cfg in group:
+                if base.startswith(host_cfg.host):
+                    new_name = base
+                else:
+                    new_name = f"{host_cfg.host}_{base}"
+                dest = KEYS_DIR / new_name
+                if not dest.exists():
+                    try:
+                        _copy_file(orig_path, dest)
+                        dest.chmod(0o600)
+                    except Exception as exc:  # pragma: no cover
+                        click.echo(f"Warning: copy failed for {host_cfg.host}: {exc}", err=True)
+                # Public key
+                if pub_src.exists():
+                    pub_dest = _match_pub_dest(dest)
+                    if not pub_dest.exists():
+                        try:
+                            _copy_file(pub_src, pub_dest)
+                            pub_dest.chmod(0o644)
+                        except Exception:
+                            pass
+                host_cfg.identity_file = str(dest)
+
+    # Write host configs
+    for h in processed:
         store.write_host_config(CONFIG_D_DIR, h)
     regenerate_main_config()
-    click.echo(f"Parsed {len(hosts)} host blocks -> {CONFIG_D_DIR}")
+    click.echo(f"Parsed {len(processed)} host blocks -> {CONFIG_D_DIR}")
 
 
 def regenerate_main_config(single: bool = False) -> str:
@@ -259,3 +298,17 @@ def relocate_identity_file(host_cfg: HostConfig, safe_alias: str) -> None:
     except Exception:
         pass
     host_cfg.identity_file = str(dest)
+
+
+def _derive_pub_path(priv: Path) -> Path:
+    # If private key has a suffix (like .pem) append .pub to full name, else just add .pub
+    return priv.with_suffix(priv.suffix + '.pub') if priv.suffix else Path(str(priv) + '.pub')
+
+
+def _match_pub_dest(priv_dest: Path) -> Path:
+    return _derive_pub_path(priv_dest)
+
+
+def _copy_file(src: Path, dest: Path) -> None:
+    data = src.read_bytes()
+    dest.write_bytes(data)
