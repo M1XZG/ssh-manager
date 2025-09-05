@@ -38,13 +38,15 @@ class HostDetail(Vertical):
         self.summary = Static(id="host-summary")
         yield self.summary
         # Edit form (initially hidden)
-        self.form_container = Vertical(id="edit-form")
-        self.input_hostname = Input(placeholder="HostName", disabled=False, id="field-hostname")
-        self.input_user = Input(placeholder="User", disabled=False, id="field-user")
-        self.input_port = Input(placeholder="Port", disabled=False, id="field-port")
-        self.form_container.mount(Horizontal(Static("HostName:"), self.input_hostname, classes="row"))
-        self.form_container.mount(Horizontal(Static("User:"), self.input_user, classes="row"))
-        self.form_container.mount(Horizontal(Static("Port:"), self.input_port, classes="row"))
+        self.input_hostname = Input(placeholder="HostName", id="field-hostname")
+        self.input_user = Input(placeholder="User", id="field-user")
+        self.input_port = Input(placeholder="Port", id="field-port")
+        form_rows = [
+            Horizontal(Static("HostName:"), self.input_hostname, classes="row"),
+            Horizontal(Static("User:"), self.input_user, classes="row"),
+            Horizontal(Static("Port:"), self.input_port, classes="row"),
+        ]
+        self.form_container = Vertical(*form_rows, id="edit-form")
         yield self.form_container
         self.form_container.display = False
 
