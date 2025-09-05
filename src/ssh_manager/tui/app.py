@@ -34,16 +34,21 @@ class HostDetail(Vertical):
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Static("Host Details", id="title")
-        self.input_host = Input(placeholder="Host alias", disabled=True)
-        self.input_hostname = Input(placeholder="HostName", disabled=True)
-        self.input_user = Input(placeholder="User", disabled=True)
-        self.input_port = Input(placeholder="Port", disabled=True)
-        self.input_identity = Input(placeholder="IdentityFile", disabled=True)
-        yield self.input_host
-        yield self.input_hostname
-        yield self.input_user
-        yield self.input_port
-        yield self.input_identity
+        # Build compact labeled rows (Host directive names shown explicitly)
+        self.input_host = Input(placeholder="Host", disabled=True, id="field-host")
+        self.input_hostname = Input(placeholder="HostName", disabled=True, id="field-hostname")
+        self.input_user = Input(placeholder="User", disabled=True, id="field-user")
+        self.input_port = Input(placeholder="Port", disabled=True, id="field-port")
+        self.input_identity = Input(placeholder="IdentityFile", disabled=True, id="field-identity")
+
+        def row(label: str, widget: Input) -> Horizontal:
+            return Horizontal(Static(f"{label}", classes="label"), widget, classes="row")
+
+        yield row("Host:", self.input_host)
+        yield row("HostName:", self.input_hostname)
+        yield row("User:", self.input_user)
+        yield row("Port:", self.input_port)
+        yield row("IdentityFile:", self.input_identity)
         btn_row = Horizontal(
             Button("Edit (e)", id="edit"),
             Button("Save (s)", id="save", disabled=True),
