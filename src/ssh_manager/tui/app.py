@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static, ListView, ListItem, Input, Button
+from textual.screen import ModalScreen
 from textual.reactive import reactive
 from textual.containers import Horizontal, Vertical
 from textual import events
@@ -9,6 +10,7 @@ from pathlib import Path
 import subprocess
 
 from ..core import parser, store
+from ..core.util import sanitize_filename
 from ..cli import regenerate_main_config  # reuse existing logic
 
 SSH_DIR = Path.home() / ".ssh"
@@ -196,6 +198,7 @@ class SSHManagerApp(App):
         ("s", "save", "Save"),
         ("g", "generate_key", "Gen Key"),
         ("escape", "cancel", "Cancel"),
+        ("n", "new_host", "New Host"),
     ]
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
@@ -256,6 +259,94 @@ class SSHManagerApp(App):
 
     def action_cancel(self) -> None:
         self.detail.action_cancel()
+
+    def action_new_host(self) -> None:
+        self.push_screen(NewHostModal(app=self))
+
+
+class NewHostModal(ModalScreen[None]):  # pragma: no cover - interactive UI
+    def __init__(self, app: SSHManagerApp):
+        super().__init__()
+        self._app = app
+        self.status: Static | None = None
+
+    def compose(self) -> ComposeResult:  # type: ignore[override]
+        box = Vertical(
+            Static("New Host Configuration", id="new-title"),
+            Horizontal(Static("Host:"), Input(id="new-host", placeholder="alias (required)"), classes="row"),
+            Horizontal(Static("HostName:"), Input(id="new-hostname", placeholder="hostname (optional)"), classes="row"),
+            Horizontal(Static("User:"), Input(id="new-user", placeholder="user", value="root"), classes="row"),
+            Horizontal(Static("Port:"), Input(id="new-port", placeholder="port", value="22"), classes="row"),
+            Horizontal(Static("KeyType:"), Input(id="new-keytype", placeholder="ed25519|rsa", value="ed25519"), classes="row"),
+            Horizontal(
+                Button("Create", id="create"),
+                Button("Cancel", id="cancel-new"),
+                classes="row"
+            ),
+            Static("", id="new-status"),
+            id="new-form"
+        )
+        yield box
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == 'cancel-new':
+            self.dismiss(None)
+            return
+        if bid == 'create':
+            self._create_host()
+
+    def _get_input(self, id_: str) -> Input:
+        return self.query_one(f"#{id_}", Input)
+
+    def _set_status(self, msg: str) -> None:
+        self.query_one('#new-status', Static).update(msg)
+
+    def _create_host(self) -> None:
+        alias_raw = self._get_input('new-host').value.strip()
+        if not alias_raw:
+            self._set_status("Host alias required")
+            return
+        alias = sanitize_filename(alias_raw)
+        hostname = self._get_input('new-hostname').value.strip() or alias
+        user = self._get_input('new-user').value.strip() or 'root'
+        port_str = self._get_input('new-port').value.strip() or '22'
+        key_type = self._get_input('new-keytype').value.strip() or 'ed25519'
+        try:
+            port = int(port_str)
+        except ValueError:
+            self._set_status("Invalid port")
+            return
+        # Check duplicate
+        if (CONFIG_D_DIR / f"{alias}.conf").exists():
+            self._set_status("Host already exists")
+            return
+        # Generate key
+        key_name = f"{alias}_{key_type}"
+        KEYS_DIR.mkdir(parents=True, exist_ok=True)
+        priv = KEYS_DIR / key_name
+        pub = KEYS_DIR / (key_name + '.pub')
+        if priv.exists():
+            self._set_status("Key already exists; aborting")
+            return
+        try:
+            cmd = ["ssh-keygen", "-t", key_type, "-f", str(priv), "-N", "", "-C", f"{user}@{hostname}"]
+            subprocess.run(cmd, check=True)
+            priv.chmod(0o600)
+            if pub.exists():
+                pub.chmod(0o644)
+        except Exception as exc:
+            self._set_status(f"Keygen failed: {exc}")
+            return
+        # Write host config
+        from ..core.model import HostConfig
+        hc = HostConfig(host=alias, hostname=hostname, user=user, port=port, identity_file=str(priv))
+        store.write_host_config(CONFIG_D_DIR, hc)
+        regenerate_main_config()
+        self._app.refresh_hosts()
+        # Select newly added host
+        self._app.detail.status = f"Created host {alias}" 
+        self.dismiss(None)
 
 
 __all__ = ["SSHManagerApp"]
