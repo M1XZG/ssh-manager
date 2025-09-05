@@ -34,21 +34,20 @@ class HostDetail(Vertical):
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Static("Host Details", id="title")
-        # Build compact labeled rows (Host directive names shown explicitly)
-        self.input_host = Input(placeholder="Host", disabled=True, id="field-host")
-        self.input_hostname = Input(placeholder="HostName", disabled=True, id="field-hostname")
-        self.input_user = Input(placeholder="User", disabled=True, id="field-user")
-        self.input_port = Input(placeholder="Port", disabled=True, id="field-port")
-        self.input_identity = Input(placeholder="IdentityFile", disabled=True, id="field-identity")
+        # Summary view (compact)
+        self.summary = Static(id="host-summary")
+        yield self.summary
+        # Edit form (initially hidden)
+        self.form_container = Vertical(id="edit-form")
+        self.input_hostname = Input(placeholder="HostName", disabled=False, id="field-hostname")
+        self.input_user = Input(placeholder="User", disabled=False, id="field-user")
+        self.input_port = Input(placeholder="Port", disabled=False, id="field-port")
+        self.form_container.mount(Horizontal(Static("HostName:"), self.input_hostname, classes="row"))
+        self.form_container.mount(Horizontal(Static("User:"), self.input_user, classes="row"))
+        self.form_container.mount(Horizontal(Static("Port:"), self.input_port, classes="row"))
+        yield self.form_container
+        self.form_container.display = False
 
-        def row(label: str, widget: Input) -> Horizontal:
-            return Horizontal(Static(f"{label}", classes="label"), widget, classes="row")
-
-        yield row("Host:", self.input_host)
-        yield row("HostName:", self.input_hostname)
-        yield row("User:", self.input_user)
-        yield row("Port:", self.input_port)
-        yield row("IdentityFile:", self.input_identity)
         btn_row = Horizontal(
             Button("Edit (e)", id="edit"),
             Button("Save (s)", id="save", disabled=True),
@@ -66,24 +65,39 @@ class HostDetail(Vertical):
     def set_record(self, rec: HostRecord | None) -> None:
         self.current = rec
         if not rec:
-            for inp in [self.input_host, self.input_hostname, self.input_user, self.input_port, self.input_identity]:
-                inp.value = ""
+            self.summary.update("No host selected")
+            self.status = ""
+            self.disable_edit_mode()
             return
         h = rec.host_cfg
-        self.input_host.value = h.host
+        self.render_summary(h)
         self.input_hostname.value = h.hostname
         self.input_user.value = h.user
         self.input_port.value = str(h.port)
-        self.input_identity.value = h.identity_file or ""
         self.status = ""
         self.disable_edit_mode()
+
+    def render_summary(self, h) -> None:
+        # Compose a compact block replicating ssh config lines + extra options
+        lines = [
+            f"Host {h.host}",
+            f"HostName {h.hostname}",
+            f"User {h.user}",
+        ]
+        if h.port != 22:
+            lines.append(f"Port {h.port}")
+        if h.identity_file:
+            lines.append(f"IdentityFile {h.identity_file}")
+        # Append any extra options already stored verbatim
+        if h.extra_options:
+            lines.extend(o.strip() for o in h.extra_options)
+        self.summary.update("\n".join(lines))
 
     def enable_edit_mode(self) -> None:
         if not self.current:
             return
         self.editing = True
-        for inp in [self.input_hostname, self.input_user, self.input_port]:
-            inp.disabled = False
+        self.form_container.display = True
         self.query_one('#save', Button).disabled = False
         self.query_one('#gen', Button).disabled = False
         self.query_one('#cancel', Button).disabled = False
@@ -91,8 +105,7 @@ class HostDetail(Vertical):
 
     def disable_edit_mode(self) -> None:
         self.editing = False
-        for inp in [self.input_host, self.input_hostname, self.input_user, self.input_port, self.input_identity]:
-            inp.disabled = True
+        self.form_container.display = False
         self.query_one('#save', Button).disabled = True
         self.query_one('#gen', Button).disabled = True
         self.query_one('#cancel', Button).disabled = True
@@ -109,6 +122,7 @@ class HostDetail(Vertical):
         if not self.current:
             return
         h = self.current.host_cfg
+        original = (h.hostname, h.user, h.port)
         h.hostname = self.input_hostname.value.strip() or h.hostname
         h.user = self.input_user.value.strip() or h.user
         try:
@@ -117,7 +131,18 @@ class HostDetail(Vertical):
             self.status = "Invalid port; keeping previous"
         store.write_host_config(CONFIG_D_DIR, h)
         regenerate_main_config()
-        self.status = "Saved." if not self.status else self.status + " Saved."
+        self.render_summary(h)
+        changed = []
+        if h.hostname != original[0]:
+            changed.append("HostName")
+        if h.user != original[1]:
+            changed.append("User")
+        if h.port != original[2]:
+            changed.append("Port")
+        if changed:
+            self.status = "Updated: " + ", ".join(changed)
+        else:
+            self.status = "No changes"
         self.disable_edit_mode()
 
     def action_generate_key(self) -> None:
@@ -143,7 +168,7 @@ class HostDetail(Vertical):
             h.identity_file = str(priv)
             store.write_host_config(CONFIG_D_DIR, h)
             regenerate_main_config()
-            self.input_identity.value = h.identity_file
+            self.render_summary(h)
             self.status = f"Generated key {priv.name}"
         except Exception as exc:  # pragma: no cover - subprocess error visual only
             self.status = f"Key gen failed: {exc}"
