@@ -19,7 +19,10 @@ def parse_ssh_config(text: str) -> List[HostConfig]:
         if m:
             if current:
                 hosts.append(current)
-            current = HostConfig(host=m.group('host'), hostname=m.group('host'))
+            # Pick only the first alias if multiple are specified
+            raw_host_field = m.group('host').strip()
+            first_alias = raw_host_field.split()[0]
+            current = HostConfig(host=first_alias, hostname=first_alias)
             continue
         m2 = INDENTED_RE.match(line)
         if m2 and current:

@@ -9,6 +9,7 @@ import click
 
 from .core.model import HostConfig
 from .core import parser, store
+from .core.util import sanitize_filename
 from . import __version__
 
 DEFAULTS_BLOCK = """##########\n# defaults\n##########\nHost *\n  ForwardX11 no\n  Protocol 2\n  TCPKeepAlive yes\n  ServerAliveInterval 10\n  Compression yes\n"""
@@ -43,6 +44,11 @@ def parse(input_path: Path, backup: bool) -> None:
     text = input_path.read_text(encoding="utf-8") if input_path.exists() else ""
     hosts = parser.parse_ssh_config(text)
     for h in hosts:
+        base_raw = (h.hostname or h.host)
+        safe = sanitize_filename(base_raw)
+        h.host = safe  # ensure alias line matches the sanitized filename stem
+        if not h.hostname:
+            h.hostname = safe
         store.write_host_config(CONFIG_D_DIR, h)
     regenerate_main_config()
     click.echo(f"Parsed {len(hosts)} host blocks -> {CONFIG_D_DIR}")
@@ -83,7 +89,9 @@ def build(single: bool) -> None:
 def new(host: str, user: str, hostname: Optional[str], port: int, key_type: str, no_copy_id: bool) -> None:
     """Create a new host config + key pair (and optionally copy key to remote)."""
     ensure_layout()
-    key_name = f"{host}_{key_type}"
+    safe_host = sanitize_filename(host)
+    host = safe_host  # normalized alias stored
+    key_name = f"{safe_host}_{key_type}"
     priv = KEYS_DIR / key_name
     pub = KEYS_DIR / (key_name + ".pub")
     if priv.exists():

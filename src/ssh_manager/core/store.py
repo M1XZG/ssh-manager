@@ -5,11 +5,13 @@ import time
 from pathlib import Path
 
 from .model import HostConfig
+from .util import sanitize_filename
 
 
 def write_host_config(config_d_dir: Path, host: HostConfig) -> Path:
     config_d_dir.mkdir(parents=True, exist_ok=True)
-    path = config_d_dir / f"{host.host}.conf"
+    safe_stem = sanitize_filename(host.host or host.hostname or "host")
+    path = config_d_dir / f"{safe_stem}.conf"
     tmp = path.with_suffix('.tmp')
     tmp.write_text(host.serialize(), encoding='utf-8')
     tmp.replace(path)
